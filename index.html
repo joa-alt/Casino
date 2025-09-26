@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Slot Machine</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container">
+    <h1 class="title">Mini Slot Machine 🎰</h1>
+
+    <section class="status">
+      <div class="credits">Credits: <span id="credits">100</span></div>
+      <div class="bet-control">
+        Einsatz:
+        <button id="bet-dec" class="btn-small">−</button>
+        <span id="bet">5</span>
+        <button id="bet-inc" class="btn-small">+</button>
+      </div>
+    </section>
+
+    <section class="slot-area" aria-label="Slot reels">
+      <div class="reel" id="reel1" aria-hidden="false">❓</div>
+      <div class="reel" id="reel2" aria-hidden="false">❓</div>
+      <div class="reel" id="reel3" aria-hidden="false">❓</div>
+    </section>
+
+    <section class="controls">
+      <button id="spin" class="btn">SPIN</button>
+      <button id="autoplay" class="btn secondary">AUTOPLAY</button>
+      <button id="reset" class="btn secondary">RESET</button>
+    </section>
+
+    <section class="log" id="log" aria-live="polite"></section>
+
+    <footer class="note">
+      Nur Spielspaß — kein Echtgeld.
+    </footer>
+  </main>
+
+  <script>
+    // --- Spiel-Logik ---
+    const symbols = ['🍒','🍋','🔔','⭐','🍀','7️⃣']; // Symbole
+    const creditsEl = document.getElementById('credits');
+    const betEl = document.getElementById('bet');
+    const reelEls = [document.getElementById('reel1'), document.getElementById('reel2'), document.getElementById('reel3')];
+    const spinBtn = document.getElementById('spin');
+    const autoplayBtn = document.getElementById('autoplay');
+    const resetBtn = document.getElementById('reset');
+    const betInc = document.getElementById('bet-inc');
+    const betDec = document.getElementById('bet-dec');
+    const log = document.getElementById('log');
+
+    let credits = 100;
+    let bet = 5;
+    let spinning = false;
+    let auto = false;
+    let autoInterval = null;
+
+    function updateUI() {
+      creditsEl.textContent = credits;
+      betEl.textContent = bet;
+      spinBtn.disabled = spinning || credits < bet;
+      autoplayBtn.classList.toggle('active', auto);
+    }
+
+    function randomSymbol() {
+      return symbols[Math.floor(Math.random() * symbols.length)];
+    }
+
+    // spinAnimation: zeigt schnell wechselnde Symbole, stoppt dann und gibt Ergebnis zurück
+    function spinOnce() {
+      if (spinning || credits < bet) return;
+      spinning = true;
+      updateUI();
+      credits -= bet;
+      logMessage(\`Einsatz \${bet} gezogen\`);
+
+      // Animation: verändert Symbole sehr schnell
+      const intervals = [];
+      reelEls.forEach((el, i) => {
+        intervals[i] = setInterval(() => {
+          el.textContent = randomSymbol();
+          el.classList.add('shaking');
+        }, 80 + i * 20);
+      });
+
+      // Stopzeiten staggered für Drama
+      const stopDelays = [800, 1250, 1700];
+      const results = [];
+
+      stopDelays.forEach((delay, idx) => {
+        setTimeout(() => {
+          clearInterval(intervals[idx]);
+          const sym = randomSymbol();
+          reelEls[idx].textContent = sym;
+          reelEls[idx].classList.remove('shaking');
+          results[idx] = sym;
+          // visuelle Hervorhebung kurz
+          reelEls[idx].classList.add('stopped');
+          setTimeout(() => reelEls[idx].classList.remove('stopped'), 350);
+
+          // wenn alle fertig: auswerten
+          if (results.filter(Boolean).length === 3) {
+            const payout = evaluate(results);
+            credits += payout;
+            if (payout > 0) {
+              logMessage(\`Gewinn: +\${payout} (Symbole: \${results.join(' ')} )\`);
+            } else {
+              logMessage(\`Verloren — Symbole: \${results.join(' ')}\`);
+            }
+            spinning = false;
+            updateUI();
+          }
+        }, delay);
+      });
+    }
+
+    // Auswertung: Rückgabe des Auszahlung-Betrags
+    function evaluate(res) {
+      // drei gleiche = große Auszahlung, besonders für 7️⃣
+      if (res[0] === res[1] && res[1] === res[2]) {
+        const sym = res[0];
+        if (sym === '7️⃣') return bet * 20;
+        if (sym === '🍀') return bet * 12;
+        if (sym === '⭐') return bet * 8;
+        return bet * 5; // andere Dreier
+      }
+
+      // zwei gleiche = kleine Auszahlung
+      if (res[0] === res[1] || res[1] === res[2] || res[0] === res[2]) {
+        return Math.floor(bet * 1.5);
+      }
+
+      // Spezial: wenn alle Symbole verschiedene, aber enthalten '🍀' (Glück) -> kleiner Trostpreis
+      if (res.includes('🍀')) return Math.floor(bet * 1);
+
+      return 0;
+    }
+
+    function logMessage(msg) {
+      const p = document.createElement('div');
+      p.textContent = msg;
+      log.prepend(p);
+    }
+
+    // Steuerelemente
+    spinBtn.addEventListener('click', spinOnce);
+
+    betInc.addEventListener('click', () => {
+      if (bet < credits) bet = Math.min(credits, bet + 1);
+      updateUI();
+    });
+    betDec.addEventListener('click', () => {
+      bet = Math.max(1, bet - 1);
+      updateUI();
+    });
+
+    autoplayBtn.addEventListener('click', () => {
+      if (auto) {
+        clearInterval(autoInterval);
+        auto = false;
+      } else {
+        auto = true;
+        autoInterval = setInterval(() => {
+          if (credits < bet) {
+            clearInterval(autoInterval);
+            auto = false;
+            logMessage('Autoplay gestoppt (zu wenig Credits).');
+            updateUI();
+            return;
+          }
+          spinOnce();
+        }, 2200); // Wartezeit etwas länger als max stopDelay
+      }
+      updateUI();
+    });
+
+    resetBtn.addEventListener('click', () => {
+      credits = 100;
+      bet = 5;
+      spinning = false;
+      auto = false;
+      clearInterval(autoInterval);
+      reelEls.forEach((el) => (el.textContent = '❓'));
+      log.innerHTML = '';
+      logMessage('Spiel zurückgesetzt.');
+      updateUI();
+    });
+
+    // initialisieren
+    updateUI();
+    logMessage('Willkommen! Drücke SPIN.');
+  </script>
+</body>
+</html>
